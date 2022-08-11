@@ -99,13 +99,13 @@ class Message:
 
     def TXEcheck(self, Node, Time):
 
-        Flag = True
+        '''
+        Object to do BFS for new incoming tip
+        '''
         layer= 0
         Elenumber =[]
         historycone = []
         CheckedTime = []
-        Currentparent = []
-        Alreadyparent = []
         Break_flag = False
 
         while [True for kk in self.Pastcone[layer] if kk not in Elenumber] and self.Pastcone[layer]!=[] and not Break_flag:
@@ -158,8 +158,6 @@ class Message:
                                         if Time-p.ConfirmedTime<=TSC_Th:
                                             Break_flag = True
                                             break
-                                        # else:
-                                        #     p.Orphan = True
 
 
 
