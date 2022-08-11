@@ -1,5 +1,3 @@
-Forked from Andrew and tested different tip pool explosion methods
-
 # IOTA Access Control Simulator
 Python simulator for the IOTA Access/Congestion Control Algorithm (ICCA).
 

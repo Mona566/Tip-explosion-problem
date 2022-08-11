@@ -51,6 +51,12 @@ class Node:
         self.MissingParentIDs = {}
         self.Max_buffer = 200 # W_max
         self.Inboxin = 2
+        self.Delayconfirmedtime = []
+        self.ConfirmedTip = []
+        self.AllTXconfirmedtime = []
+
+
+        self.Heap = []
         
     def issue_msgs(self, Time):
         """
@@ -76,6 +82,11 @@ class Node:
                 self.LastIssueTime = max(OldestMsgTime, self.LastIssueTime+self.LastIssueWork/self.Lambda)
                 Msg = self.MsgPool.pop(0)
                 Msg.Parents = self.select_tips(Time)
+
+                for _,p in Msg.Parents.items():
+                    p.Children.append(Msg) 
+
+
                 Msg.IssueTime = self.LastIssueTime
                 self.LastIssueWork = Msg.Work
                 self.IssuedMsgs.append(Msg)
@@ -85,7 +96,11 @@ class Node:
             for t in times:
                 Parents = self.select_tips(Time)
                 self.IssuedMsgs.append(Message(t, Parents, self, self.Network, Work=Work))
-                
+                Msg = Message(t, Parents, self, self.Network, Work=Work)
+
+                for _,p in Msg.Parents.items():
+                    p.Children.append(Msg)                 
+
         # Issue the messages
         while self.IssuedMsgs:
             Msg = self.IssuedMsgs.pop(0)
@@ -105,6 +120,9 @@ class Node:
         """
         self.TipsSet.append(tip)
         self.NodeTipsSet[tip.NodeID].append(tip)
+
+      
+
     
     def remove_tip(self, tip):
         """
@@ -121,28 +139,42 @@ class Node:
         while not done:
             done = True
             if len(self.TipsSet)>1:
-                # ts = self.TipsSet   
-                ConfirmedTip = [i for i in self.TipsSet if i.ConfirmedTime!=None] 
-                OkTip= [i for i in ConfirmedTip if Time-i.ConfirmedTime<=TSC] 
-                if len(OkTip)<=2:
-                    ts= self.TipsSet
-                else:
-                    ts= OkTip            
+                ts = self.TipsSet   
+                # if Msg.ConfirmedTime!=None:
+                # if Time-Msg.ConfirmedTime<=TSC:
+                self.ConfirmedTip = [i for i in self.TipsSet if i.Confirmed]
+
+                # # # ParentContip = [i.Parents for i in ConfirmedTip]
+                # # # kkk= [[] for i in range(len(ParentContip))]
+                # # # for j in range(len(ParentContip)):
+                # # #     for value in ParentContip[j].values():
+                # # #         kkk[j].append(value.ConfirmedTime)
+                
+                # # # for i in range(len(ConfirmedTip)):
+                # # #     for j in range(len(kkk[i])):
+                # # #         if ConfirmedTip[i].ConfirmedTime - j<=TSC:
+                # # #             OkTip.append(ConfirmedTip[i])
+      
+                # OkTip= [i for i in ConfirmedTip if Time-i.ConfirmedTime<=TSC] 
+                # if len(OkTip)<=2:
+                #     ts= self.TipsSet
+                # else:
+                #     ts= OkTip            
                 Selection = sample(ts, k=2)
             else:
                 eligibleLedger = [msg for _,msg in self.Ledger.items() if msg.Eligible] 
-
-                ConfirmedTip = [i for i in eligibleLedger if i.ConfirmedTime!=None] 
-                OkTip= [i for i in ConfirmedTip if Time-i.ConfirmedTime<=TSC] 
-                if len(OkTip)<=2:
-                    neweligibleLedger= eligibleLedger
-                else:
-                    neweligibleLedger= OkTip  
+                self.ConfirmedTip = [i for i in eligibleLedger if i.Confirmed]
+                # ConfirmedTip = [i for i in eligibleLedger if i.ConfirmedTime!=None] 
+                # OkTip= [i for i in ConfirmedTip if Time-i.ConfirmedTime<=TSC] 
+                # if len(OkTip)<=2:
+                #     neweligibleLedger= eligibleLedger
+                # else:
+                #     neweligibleLedger= OkTip  
  
-                if len(neweligibleLedger)>1:
-                   Selection = sample(neweligibleLedger, k=2)
+                if len(eligibleLedger)>1:
+                   Selection = sample(eligibleLedger, k=2)
                 else:
-                    Selection = neweligibleLedger # genesis
+                    Selection = eligibleLedger # genesis
         assert len(Selection)==2 or Selection[0].Index==0
         return {s.Index: s for s in Selection}   
 
@@ -202,15 +234,31 @@ class Node:
         If the oldest unconfirmed message in the past cone of the tip (time since confirmation) is too far in the past,
         the message is discarded from the selection but temporarily kept in the tip set.
         
+                        ConfirmedTip = [i for i in self.TipsSet if i.ConfirmedTime!=None] 
         """
         
         self.Inbox.update_ready()
+       
+        #self.add_tip(Msg)
      # Normal tip update          
         if OWN_TXS or Msg.NodeID!=self.NodeID or MODE[self.NodeID]>=3:
-            if MAX_TIP_AGE is None:
+
+            # tt=Msg.contime(self, Time)
+            # if tt is not None:
+            #     self.Delayconfirmedtime.append(tt)
+            # # self.add_tip(Msg)            
+            # # if MAX_TIP_AGE is None:
+            if Time>TSC_Th:
+                tt = Msg.TXEcheck(self, Time)
+                if tt is not None:
+                    self.Delayconfirmedtime.append(tt)                
+                if tt is not None and Time-tt<=TSC_Th:            
+                    self.add_tip(Msg)
+            else:
                 self.add_tip(Msg)
-            elif Time-Msg.IssueTime < MAX_TIP_AGE:
-                self.add_tip(Msg)
+
+
+         
 
         # if this is a malicious nodes own message and ATK_TIP_RM_PARENTS is False, then don't remove the tips it selected as parents
         if MODE[self.NodeID]>=3 and Msg.NodeID==self.NodeID and not ATK_TIP_RM_PARENTS:
@@ -258,9 +306,33 @@ class Node:
             Msg.mark_confirmed(self)
         Msg.Eligible = True
         self.update_tipsset(Msg, Time)
+
+        # if len(self.UnconfMsgs)!=0:
+        #     self.Unconsgcheck(Time)
+
+
         Msg.EligibleTime = Time
         # broadcast the packet
         self.forward(TxNode, Msg, Time)
+
+
+    # def Unconsgcheck(self,Time): 
+
+    #     Msg = self.UnconfMsgs.copy()
+
+    #     sorted(Msg, key=lambda x: self.UnconfMsgs[x].IssueTime)
+        
+    #     for _,i in list(Msg.items()):
+    #         if Time-i.IssueTime>=150:
+    #             self.UnconfMsgs.pop(_)
+    #         else:
+    #             break
+
+
+    #     for _,p in list(self.UnconfMsgs.items()): 
+    #         if p.Orphan:
+    #             self.UnconfMsgs.pop(_)
+
 
     def forward(self, TxNode, Msg, Time):
         """

@@ -12,6 +12,8 @@ class Message:
         self.InScheduletime = InScheduletime
         self.MessageInFlag = MessageInFlag
         self.Parents = Parents
+        self.Children = []
+      
         self.Network = Network
         self.Index = Network.MsgIndex
         self.Milestone = Milestone
@@ -23,29 +25,56 @@ class Message:
         self.LastCWUpdate = self
         self.Dropped = False
         self.ConfirmedTime = None
+        self.LastConfirm = self
+        self.Time1 = []
+        self.q = []
+        self.k = {}
+        self.Pastcone = [[] for i in range(100)]
+        self.TXConfirmedtime = [[] for i in range(100)]
+        self.layer= 0
+        self.Parentcone = [[] for i in range(1000)]
+
+
+        self.Orphan = False
+        self.Maxconcone = 0
+
+
+          
         if Node:
             self.Solid = False
             self.NodeID = Node.NodeID # signature of issuing node
             self.Eligible = False
             self.Confirmed = False
             self.EligibleTime = None
+            self.Pastcone[0].append(self) 
+            self.TXConfirmedtime[0].append(self.ConfirmedTime)
             Network.MsgIssuer[Network.MsgIndex] = Node.NodeID
         else: # genesis
             self.Solid = True
             self.NodeID = 0 # Genesis is issued by Node 0
+            self.Pastcone[0].append(self) 
+            self.TXConfirmedtime[0].append(self.ConfirmedTime)
             self.Eligible = True
             self.Confirmed = True
             self.EligibleTime = 0
+            self.ConfirmedTime = IssueTime
         Network.MsgIndex += 1
+
 
     def mark_confirmed(self, Node = None, Confirtime=None):
         self.Confirmed = True
         self.ConfirmedTime = Confirtime
+        self.Network.Nodes[self.NodeID].AllTXconfirmedtime.append(self.ConfirmedTime-self.IssueTime)  
+        # self.ConChilup()
+        # self.TXConupdate(Node)
+
+
         assert Node.NodeID in self.Network.ScheduledNodes[self.Index]
         assert not Node.NodeID in self.Network.ConfirmedNodes[self.Index]
         self.Network.ConfirmedNodes[self.Index].append(Node.NodeID)
         if len(self.Network.ConfirmedNodes[self.Index])==NUM_NODES:
-            self.Network.Nodes[self.NodeID].UnconfMsgs.pop(self.Index)
+            if self.Index in self.Network.Nodes[self.NodeID].UnconfMsgs:
+                self.Network.Nodes[self.NodeID].UnconfMsgs.pop(self.Index)
             self.Network.Nodes[self.NodeID].ConfMsgs[self.Index] = self
         for _,p in self.Parents.items():
             if not p.Confirmed:
@@ -66,7 +95,86 @@ class Message:
         for _,p in self.Parents.items():
             if not p.Confirmed and p.LastCWUpdate != updateMsg:
                 p.updateCW(Node, updateMsg, Work, UPdateCWtime)
-    
+
+
+    def TXEcheck(self, Node, Time):
+
+        Flag = True
+        layer= 0
+        Elenumber =[]
+        historycone = []
+        CheckedTime = []
+        Currentparent = []
+        Alreadyparent = []
+        Break_flag = False
+
+        while [True for kk in self.Pastcone[layer] if kk not in Elenumber] and self.Pastcone[layer]!=[] and not Break_flag:
+            if Elenumber!=[]:          
+                for j in self.Pastcone[layer-1]:
+                    if j in Elenumber:
+                        Elenumber.remove(j) 
+            
+            for i in self.Pastcone[layer]: 
+                if not Break_flag:
+                    if i not in Elenumber:
+                        Elenumber.append(i)
+
+                    if i in self.Pastcone[layer]:
+                        if self.Pastcone[layer].index(i)==0:
+                            layer+=1
+                    
+                    if Time-i.IssueTime<Last_IssuTiime:
+                        if len(i.Parents)==0:
+                            break
+                        else:
+                            for _,p in i.Parents.items():
+                                self.Pastcone[layer].append(p)
+                                # print(self, self.Pastcone[0][0], p, Node.NodeID)
+                                            
+                        # check whether there are same transactions in this layer
+                        Dulcheck = []     
+                        for k in self.Pastcone[layer]:
+                            if k not in Dulcheck:
+                                Dulcheck.append(k)
+                        
+                        # check whether there are same transactions in this layer
+                        self.Pastcone[layer] = Dulcheck
+                        for k in range(layer):
+                            if len(self.Pastcone[k])!=0:
+                                for jj in self.Pastcone[k]:
+                                    historycone.append(jj)
+                                    
+
+                        for k in self.Pastcone[layer]: 
+                            if k in historycone:
+                                self.Pastcone[layer].remove(k)
+                                              
+
+                        for k in range(layer+1):
+                            if len(self.Pastcone[k])!=0:
+                                for p in self.Pastcone[k]:
+                                    if p.ConfirmedTime!=None:
+                                        self.TXConfirmedtime[k].append(p.ConfirmedTime)
+                                        if Time-p.ConfirmedTime<=TSC_Th:
+                                            Break_flag = True
+                                            break
+                                        # else:
+                                        #     p.Orphan = True
+
+
+
+        for i in self.TXConfirmedtime:
+            if len(i)!=0:
+                for j in i:
+                    if j!=None:
+                        CheckedTime.append(j)
+
+        if CheckedTime:
+            return  max(CheckedTime)      
+        else:
+            return None                                   
+                  
+
     def copy(self, Node):
         Msg = copy(self)
         parentIDs = [p for p in Msg.Parents]
@@ -121,6 +229,8 @@ class Message:
                     child.Parents[self.Index] = self
                     assert self.IssueTime < child.IssueTime
                     child.solidify(Node)
+
+
 
 class SolRequest:
     '''
