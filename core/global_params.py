@@ -2,7 +2,7 @@ import numpy as np
 
 # Simulation Parameters
 MONTE_CARLOS = 1
-SIM_TIME = 300
+SIM_TIME = 1200
 STEP = 0.01
 # Network Parameters
 NU = 20
@@ -61,8 +61,11 @@ ALERT_TIPMAX = 200
 # Tip selection
 L_MAX = 300
 OWN_TXS = True
-MAX_TIP_AGE = 70  #30
-TSC = 80
+MAX_TIP_AGE = 30  #30
+
+#TSC condition threshold
+TSC_Th = 25
+Last_IssuTiime = 80
 
 # Gossip optimisation
 PRUNING = False
@@ -74,7 +77,7 @@ CONF_TYPE = 'CW'
 MILESTONE_PERIOD = 10
 COO = 0
 ## Cumulative Weight (CW)
-CONF_WEIGHT = 200
+CONF_WEIGHT = 10
 
 # Attacker details
 ## Tip selection

@@ -138,7 +138,9 @@ def main():
                                 'Solidification Buffer Length',
                                 'Maxtime of delayed message',
                                 'Maxtime delayed tx NodeID',
-                                'Maxtime of malicious delayed message']   
+                                'Maxtime of malicious delayed message',  
+                                'Number of confirmed tips in tip pool',
+                                'Maximum updated confirmed time']     # self.Updateconfirmedtime
         dirstr = os.path.dirname(os.path.realpath(__file__)) + '/results/'+ strftime("%Y-%m-%d_%H%M%S", gmtime())
         os.makedirs(dirstr, exist_ok=True)
         os.makedirs(dirstr+'/raw', exist_ok=True)
@@ -176,6 +178,8 @@ def simulate(per_node_result_keys, dirstr):
     ServTimes = [[] for NodeID in range(NUM_NODES)]
     ArrTimes = [[] for NodeID in range(NUM_NODES)]
     interArrTimes = [[] for NodeID in range(NUM_NODES)]
+    Delayconfirmedtime= [[] for NodeID in range(NUM_NODES)]
+    AllTXconfirmedtime = [[] for NodeID in range(NUM_NODES)]
     for mc in range(MONTE_CARLOS):
         """
         Generate network topology:
@@ -232,6 +236,10 @@ def simulate(per_node_result_keys, dirstr):
                 per_node_results['Number of Unconfirmed Messages'][mc][i,NodeID] = len(Node.UnconfMsgs)
                 per_node_results['Solidification Buffer Length'][mc][i,NodeID] = len(Node.SolBuffer)
 
+
+                per_node_results['Number of confirmed tips in tip pool'][mc][i,NodeID] = len(Node.ConfirmedTip) 
+
+
                 if len(Node.Inbox.DelayedMessTime)!=0:
                     per_node_results['Maxtime of delayed message'][mc][i,NodeID] = max(Node.Inbox.DelayedMessTime)     
                 else:
@@ -242,25 +250,25 @@ def simulate(per_node_result_keys, dirstr):
                 else:
                     per_node_results['Maxtime of malicious delayed message'][mc][i,NodeID] = 0  
 
+ 
+                if MODE[NodeID]<3:
+                    if Node.UnconfMsgs:
+                    # Msg = Node.UnconfMsgs.copy()
+                    # sorted(Msg, key=lambda x: Msg[x].IssueTime)
+                    # Msg = {p for _,p in Msg.items() if p.Orphan== False}
+                        OldestMsgIdx = min(Node.UnconfMsgs, key=lambda x: Node.UnconfMsgs[x].IssueTime)
+                        age = T+STEP-Node.UnconfMsgs[OldestMsgIdx].IssueTime                   
+                        while age>=150:
+                            Node.UnconfMsgs.pop(OldestMsgIdx)
+                            OldestMsgIdx = min(Node.UnconfMsgs, key=lambda x: Node.UnconfMsgs[x].IssueTime)
+                            age = T+STEP-Node.UnconfMsgs[OldestMsgIdx].IssueTime
 
-                # length = []
-                # for i in Node.Inbox.DelayedTxNodeID:
-                #     if i!=[]:
-                #         length.append(len(i))
-                #     else:
-                #         length.append(0)
-
-                # a= length.index(max(length))
-                # per_node_results['Maxtime delayed tx NodeID'][mc][i,NodeID]= a
-             
-                #if len(Node.SolBuffer)>100:
-                    #print("Solidification issue")
-                if Node.UnconfMsgs:
-                    OldestMsgIdx = min(Node.UnconfMsgs, key=lambda x: Node.UnconfMsgs[x].IssueTime)
-                    age = T+STEP-Node.UnconfMsgs[OldestMsgIdx].IssueTime
-                else:
-                    age = 0
+                    else:
+                        age = 0
+                
                 per_node_results['Max Unconfirmed Message Age'][mc][i,NodeID] = age
+
+
         print("Simulation: "+str(mc) +"\t 100% Complete")
         OldestTxAge.append(np.mean(OldestTxAges, axis=1))
         for i in range(SIM_TIME):
@@ -285,7 +293,12 @@ def simulate(per_node_result_keys, dirstr):
             ArrWorks = [x for _,x in sorted(zip(Net.Nodes[NodeID].ArrivalTimes,Net.Nodes[NodeID].ArrivalWorks))]
             interArrTimes[NodeID].extend(np.diff(ArrTimes[NodeID])/ArrWorks[1:])
             inboxLatencies[NodeID].extend(Net.Nodes[NodeID].InboxLatencies)
-                
+
+            Delayconfirmedtime[NodeID]= sorted(Net.Nodes[NodeID].Delayconfirmedtime)
+            AllTXconfirmedtime[NodeID]= sorted(Net.Nodes[NodeID].AllTXconfirmedtime)
+
+
+
         latencies, latTimes = Net.msg_latency(latencies, latTimes)
         
         del Net
@@ -316,6 +329,7 @@ def simulate(per_node_result_keys, dirstr):
     np.savetxt(dirstr+'/raw/avgOldestTxAge.csv', avgOTA, delimiter=',')
     np.savetxt(dirstr+'/raw/avgUnsolid.csv', avgUnsolid, delimiter=',')
     np.savetxt(dirstr+'/raw/avgEligibleDelays.csv', avgEligibleDelays, delimiter=',')
+    
     for NodeID in range(NUM_NODES):
         np.savetxt(dirstr+'/raw/inboxLatencies'+str(NodeID)+'.csv',
                    np.asarray(inboxLatencies[NodeID]), delimiter=',')
@@ -325,6 +339,11 @@ def simulate(per_node_result_keys, dirstr):
                    np.asarray(ServTimes[NodeID]), delimiter=',')
         np.savetxt(dirstr+'/raw/ArrTimes'+str(NodeID)+'.csv',
                    np.asarray(ArrTimes[NodeID]), delimiter=',')
+        np.savetxt(dirstr+'/raw/Delayconfirmedtime'+str(NodeID)+'.csv', 
+                   np.asarray(Delayconfirmedtime[NodeID]), delimiter=',')
+        np.savetxt(dirstr+'/raw/AllTXconfirmedtime'+str(NodeID)+'.csv', 
+                   np.asarray(AllTXconfirmedtime[NodeID]), delimiter=',')
+
     nx.write_adjlist(G, dirstr+'/raw/result_adjlist.txt', delimiter=' ')
     return per_node_results.keys()
 
@@ -349,10 +368,13 @@ def plot_results(dirstr, per_node_result_keys):
     avgMeanDelay = np.loadtxt(dirstr+'/raw/avgMeanDelay.csv', delimiter=',')
     #avgMeanDelay = np.loadtxt(dirstr+'/avgMeanVisDelay.csv', delimiter=',')
     avgOTA = np.loadtxt(dirstr+'/raw/avgOldestTxAge.csv', delimiter=',')
+    
     latencies = []
     #inboxLatencies = []
     ServTimes = []
     ArrTimes = []
+    Delayconfirmedtime =[]
+    AllTXconfirmedtime = []
     
     for NodeID in range(NUM_NODES):
         if os.stat(dirstr+'/raw/latencies'+str(NodeID)+'.csv').st_size != 0:
@@ -369,6 +391,8 @@ def plot_results(dirstr, per_node_result_keys):
         '''
         ServTimes.append([np.loadtxt(dirstr+'/raw/ServTimes'+str(NodeID)+'.csv', delimiter=',')])
         ArrTimes.append([np.loadtxt(dirstr+'/raw/ArrTimes'+str(NodeID)+'.csv', delimiter=',')])
+        Delayconfirmedtime.append([np.loadtxt(dirstr+'/raw/Delayconfirmedtime'+str(NodeID)+'.csv', delimiter=',')])
+        AllTXconfirmedtime.append([np.loadtxt(dirstr+'/raw/AllTXconfirmedtime'+str(NodeID)+'.csv', delimiter=',')])
     """
     Plot results
     """
@@ -411,6 +435,8 @@ def plot_results(dirstr, per_node_result_keys):
 
     per_node_plot(avgEligibleDelays, 'Time (sec)', 'Age of Messages Becoming Eligible', '', dirstr, avg_window=20, step=1)
     per_node_plot(avgUnsolid, 'Time (sec)', 'Unsolid', '', dirstr)
+
+    
     
     per_node_barplot(REP, 'Node ID', 'Reputation', 'Reputation Distribution', dirstr+'/plots/RepDist.png')
     per_node_barplot(QUANTUM, 'Node ID', 'Quantum', 'Quantum Distribution', dirstr+'/plots/QDist.png')
@@ -418,6 +444,7 @@ def plot_results(dirstr, per_node_result_keys):
     all_node_plot(per_node_results['Number of Unconfirmed Messages'].sum(axis=1), 'Time (sec)', 'Number of Unconfirmed Messages', '', dirstr+'/plots/AllUnconfirmed.png')
     all_node_plot(avgPIT, 'Time (sec)', 'Number of packets in transit', '', dirstr+'/plots/PIT.png')
     all_node_plot(avgOTA, 'Time (sec)', 'Max time in transit (sec)', '', dirstr+'/plots/MaxAge.png')
+ # all_node_plot(per_node_results['Number of confirmed Messages'].sum(axis=1), 'Time (sec)', 'Number of confirmed Messages', '', dirstr+'/plots/Allconfirmed.png')
 
     per_node_delayedTX_plot(per_node_results['Maxtime of delayed message'], 'Time (sec)', 'DelayedTXTime', '', dirstr)
    # per_node_delayedTX_plot(per_node_results['Maxtime delayed tx NodeID'], 'Time (sec)', 'DelayedTXNodeID', '', dirstr)
